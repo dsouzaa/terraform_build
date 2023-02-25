@@ -6,146 +6,148 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 4.0"
     }
- }
-}
-
-
-resource "aws_instance" "example" {
-  #ami           = "ami-033594f8862b03bb2"
-  #ami           = "ami-0f1ee03d06c4c659c"
-  ami           = "ami-0c2b0d3fb02824d92"
-  instance_type = "t2.micro"
-  iam_instance_profile = "${aws_iam_instance_profile.test_profile.name}"
-  key_name = "terraform-key"
-  security_groups = ["${aws_security_group.allow_rdp.name}"]
-  user_data                   = data.template_file.userdata_powershell.rendered
-
-
-
-}
-
-data "template_file" "userdata_powershell" {
-
-  template = <<EOF
-<powershell>
-start-transcript
-$dlurl = "https://awscli.amazonaws.com/AWSCLIV2-2.0.30.msi"
-$installerPath = Join-Path $env:TEMP (Split-Path $dlurl -Leaf)
-Invoke-WebRequest $dlurl -OutFile $installerPath
-Start-Process -FilePath msiexec -Args "/i $installerPath /passive" -Verb RunAs -Wait
-mkdir C:\temp
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-aws s3 cp s3://myawsbucketadam1987/ C:\temp --recursive
-##Start-Process  -Filepath "C:\temp\jdk-11.0.15.1_windows-x64_bin.exe"  -ArgumentList '/s' -PassThru
-##[System.Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\temp\jdk-11.0.17+8\bin")
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-#C:\temp\java_path.ps1
-##[System.Environment]::SetEnvironmentVariable("Path", [System.Environment]::GetEnvironmentVariable('Path', [System.EnvironmentVariableTarget]::Machine) + ";$($env:JAVA_HOME)")
-##$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-###[Environment]::SetEnvironmentVariable("JAVA_HOME","C:\temp\jdk-11.0.17+8\bin",[System.EnvironmentVariableTarget]::Machine)
-###[Environment]::SetEnvironmentVariable("PATH",[Environment]::GetEnvironmentVariable("PATH",[System.EnvironmentVariableTarget]::Machine)+";C:\temp\jdk-11.0.17+8\bin",[System.EnvironmentVariableTarget]
-###$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-####[System.Environment]::SetEnvironmentVariable("JAVA_HOME", "C:\temp\jdk-11.0.17+8\bin;", [System.EnvironmentVariableTarget]::Machine)
-####[System.Environment]::GetEnvironmentVariable("JAVA_HOME", [System.EnvironmentVariableTarget]::Machine)
-####[System.Environment]::SetEnvironmentVariable("Path", "%JAVA_HOME%;" + [Environment]::GetEnvironmentVariable('Path', [EnvironmentVariableTarget]::Machine), [System.EnvironmentVariableTarget]::Machine)
-####[System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
-####[System.Environment]::SetEnvironmentVariable("Path", "C:\temp\jdk-11.0.17+8\bin;" + [Environment]::GetEnvironmentVariable('Path', [EnvironmentVariableTarget]::Machine), [System.EnvironmentVariableTarget]::Machine)
-####[System.Environment]::GetEnvironmentVariable("Path", [System.EnvironmentVariableTarget]::Machine)
-</powershell>
-EOF
-}
-
-
-resource "aws_iam_role" "test_role" {
-  name = "test_role"
-
-  assume_role_policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": "sts:AssumeRole",
-      "Principal": {
-        "Service": "ec2.amazonaws.com"
-      },
-      "Effect": "Allow",
-      "Sid": ""
-    }
-  ]
-}
-EOF
-
-  tags = {
-      tag-key = "tag-value"
   }
 }
 
-
-
-resource "aws_iam_instance_profile" "test_profile" {
-  name = "test_profile"
-  role = "${aws_iam_role.test_role.name}"
+provider "aws" {
+  region = "us-east-2"
 }
 
-resource "aws_iam_role_policy" "test_policy" {
-  name = "test_policy"
-  role = "${aws_iam_role.test_role.id}"
+resource "aws_launch_configuration" "example" {
+  image_id        = "ami-0fb653ca2d3203ac1"
+  instance_type   = "t2.micro"
+  security_groups = [aws_security_group.instance.id]
 
-  policy = <<EOF
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": [
-        "s3:*"
-      ],
-      "Effect": "Allow",
-      "Resource": "*"
-    }
-  ]
-}
-EOF
+  user_data = <<-EOF
+              #!/bin/bash
+              echo "Hello, World" > index.html
+              nohup busybox httpd -f -p ${var.server_port} &
+              EOF
+
+  # Required when using a launch configuration with an auto scaling group.
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
+resource "aws_autoscaling_group" "example" {
+  launch_configuration = aws_launch_configuration.example.name
+  vpc_zone_identifier  = data.aws_subnets.default.ids
 
+  target_group_arns = [aws_lb_target_group.asg.arn]
+  health_check_type = "ELB"
 
-  resource "aws_security_group" "allow_rdp" {
-  name        = "allow_rdp"
-  description = "Allow ssh traffic"
+  min_size = 2
+  max_size = 10
 
+  tag {
+    key                 = "Name"
+    value               = "terraform-asg-example"
+    propagate_at_launch = true
+  }
+}
+
+resource "aws_security_group" "instance" {
+  name = var.instance_security_group_name
 
   ingress {
+    from_port   = var.server_port
+    to_port     = var.server_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-    from_port   = 3389 #  By default, the windows server listens on TCP port 3389 for RDP
-    to_port     = 3389
-    protocol =   "tcp"
+data "aws_vpc" "default" {
+  default = true
+}
 
-    cidr_blocks =  ["0.0.0.0/0"]
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
+resource "aws_lb" "example" {
+
+  name               = var.alb_name
+
+  load_balancer_type = "application"
+  subnets            = data.aws_subnets.default.ids
+  security_groups    = [aws_security_group.alb.id]
+}
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.example.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  # By default, return a simple 404 page
+  default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "404: page not found"
+      status_code  = 404
+    }
+  }
+}
+
+resource "aws_lb_target_group" "asg" {
+
+  name = var.alb_name
+
+  port     = var.server_port
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+
+  health_check {
+    path                = "/"
+    protocol            = "HTTP"
+    matcher             = "200"
+    interval            = 15
+    timeout             = 3
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+  }
+}
+
+resource "aws_lb_listener_rule" "asg" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 100
+
+  condition {
+    path_pattern {
+      values = ["*"]
+    }
   }
 
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.asg.arn
+  }
+}
+
+resource "aws_security_group" "alb" {
+
+  name = var.alb_security_group_name
+
+  # Allow inbound HTTP requests
   ingress {
-    from_port = 80
-    to_port   = 80
-    protocol  = "tcp"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port = 443
-    to_port   = 443
-    protocol  = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
+  # Allow all outbound requests
   egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-
-
 }
 
-      
