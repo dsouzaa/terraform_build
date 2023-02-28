@@ -1,3 +1,4 @@
+# https://blog.imfiny.com/imfiny-aws-terraform-2019-01-18-aws-launch-templates-html/
 terraform {
   required_version = ">= 1.0.0, < 2.0.0"
 
@@ -13,22 +14,39 @@ provider "aws" {
   region = "us-east-2"
 }
 
-resource "aws_launch_configuration" "example" {
-  image_id        = "ami-0fb653ca2d3203ac1"
-  instance_type   = "t2.micro"
-  security_groups = [aws_security_group.instance.id]
-
+resource "aws_launch_template" "webservers" {
+  name_prefix          = "webservers"
+  image_id             = "ami-0fb653ca2d3203ac1"
+  instance_type        = "t2.micro"
+  security_group_names = [aws_security_group.instance.id]
+  
   user_data = <<-EOF
               #!/bin/bash
               echo "Hello, World" > index.html
               nohup busybox httpd -f -p ${var.server_port} &
               EOF
 
-  # Required when using a launch configuration with an auto scaling group.
-  lifecycle {
-    create_before_destroy = true
-  }
+
 }
+
+
+
+#resource "aws_launch_configuration" "example" {
+#  image_id        = "ami-0fb653ca2d3203ac1"
+#  instance_type   = "t2.micro"
+#  security_groups = [aws_security_group.instance.id]
+#
+##  user_data = <<-EOF
+#              #!/bin/bash
+#              echo "Hello, World" > index.html
+#              nohup busybox httpd -f -p ${var.server_port} &
+#              EOF
+#
+#  # Required when using a launch configuration with an auto scaling group.
+#  lifecycle {
+#    create_before_destroy = true
+##  }
+#}
 
 resource "aws_autoscaling_group" "example" {
   launch_configuration = aws_launch_configuration.example.name
