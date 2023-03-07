@@ -17,6 +17,7 @@ resource "aws_instance" "example" {
   ami                    = "ami-0fb653ca2d3203ac1"
   instance_type          = "t2.micro"
   vpc_security_group_ids = [aws_security_group.instance.id]
+  key_name               = "ubuntu_ohio_1"
 
   user_data = <<-EOF
               #!/bin/bash
@@ -41,5 +42,15 @@ resource "aws_security_group" "instance" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  ingress {
+    description = "Allow SSH from my computer"
+    from_port   = var.ssh_port
+    to_port     = var.ssh_port 
+    protocol    = "tcp"
+    // This is using the variable "my_ip"
+    cidr_blocks = ["${var.my_ip}"]
+  }   
+  
 }
 

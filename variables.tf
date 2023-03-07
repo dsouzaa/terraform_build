@@ -4,6 +4,13 @@ variable "server_port" {
   default     = 8080
 }
 
+variable "ssh_port" {
+  description = "The port the server will use for HTTP requests"
+  type        = number
+  default     = 22
+}
+
+
 variable "number_example" {
   description = "An example of a number variable in Terraform"
   type        = number
@@ -54,4 +61,10 @@ variable "security_group_name" {
   description = "The name of the security group"
   type        = string
   default     = "terraform-example-instance"
+}
+
+variable "my_ip" {
+  description = "Your IP address"
+  type        = string
+  default     = "0.0.0.0/0" 
 }
