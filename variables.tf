@@ -11,6 +11,13 @@ variable "ssh_port" {
 }
 
 
+variable "aws_region" {
+  description = "AWS region"
+  type        = string
+  default     = "us-east-2"
+}
+
+
 variable "number_example" {
   description = "An example of a number variable in Terraform"
   type        = number
